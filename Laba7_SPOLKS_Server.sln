@@ -5,6 +5,8 @@ VisualStudioVersion = 12.0.21005.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Laba7_SPOLKS_Server", "Laba7_SPOLKS_Server\Laba7_SPOLKS_Server.csproj", "{838AA62C-3462-402F-8962-325A0E06A1C5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Laba7_SPOLKS_Instance", "Laba7_SPOLKS_Instance\Laba7_SPOLKS_Instance.csproj", "{2B1F3EC2-E805-444A-A61B-48B26E438FDB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{838AA62C-3462-402F-8962-325A0E06A1C5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{838AA62C-3462-402F-8962-325A0E06A1C5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{838AA62C-3462-402F-8962-325A0E06A1C5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B1F3EC2-E805-444A-A61B-48B26E438FDB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B1F3EC2-E805-444A-A61B-48B26E438FDB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B1F3EC2-E805-444A-A61B-48B26E438FDB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B1F3EC2-E805-444A-A61B-48B26E438FDB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
