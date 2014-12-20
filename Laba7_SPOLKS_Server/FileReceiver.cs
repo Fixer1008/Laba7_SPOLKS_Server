@@ -15,86 +15,75 @@ namespace Laba7_SPOLKS_Server
   {
     private const int Size = 8192;
     private const int LocalPort = 11000;
-    private const int WindowSize = 5;
     private const string SyncMessage = "S";
-
+    private const string SharedMemoryFile = "SharedMemoryFile";
     private const string ServerInstansePath = "..\\..\\..\\Laba7_SPOLKS_Instance\\bin\\Debug\\Laba7_SPOLKS_Instance.exe";
 
     private int connectionFlag = 0;
-    private int SelectTimeout = 20000000;
+    private int SelectTimeout = 60000000;   //60 seconds
     private int AvailableClientsAmount = Environment.ProcessorCount - 1;
 
-    private readonly UdpFileClient[] _udpFileReceiver;
-    private readonly Dictionary<Socket, FileDetails> _fileDetails;
-
-    private IList<Process> _processesList;
-    private IList<Socket> _socket;
+    private readonly UdpFileClient _udpFileReceiver;
+    private readonly Dictionary<IPEndPoint, FileDetails> _fileDetails;
 
     private IPEndPoint _remoteIpEndPoint = null;
+    private MemoryMappedFile _memoryMapped;
+    private Semaphore _semaphore;
+    private ProcessesPool _processesPool;
 
     public FileReceiver()
     {
-      _fileDetails = new Dictionary<Socket, FileDetails>();
-      _udpFileReceiver = new UdpFileClient[AvailableClientsAmount];
-      _socket = new List<Socket>();
-      _processesList = new List<Process>();
+      _fileDetails = new Dictionary<IPEndPoint, FileDetails>();
+      _udpFileReceiver = new UdpFileClient(LocalPort);
+      _processesPool = new ProcessesPool();
+      _semaphore = new Semaphore(0, AvailableClientsAmount, "sem");
+      _memoryMapped = new MemoryMappedFile(SharedMemoryFile, "lab7");
     }
 
     public int Receive()
     {
       InitializeUdpClients();
+      _processesPool.InitializePool(LocalPort);
+
       var result = ReceiveFileData();
       return result;
     }
 
     private void InitializeUdpClients()
     {
-      for (int i = 0; i < _udpFileReceiver.Length; i++)
-      {
-        _udpFileReceiver[i] = new UdpFileClient(LocalPort + i);
-        _udpFileReceiver[i].Client.ReceiveTimeout = _udpFileReceiver[i].Client.SendTimeout = 10000;
-        _socket.Add(_udpFileReceiver[i].Client);
-      }
+      _udpFileReceiver.Client.ReceiveTimeout = _udpFileReceiver.Client.SendTimeout = 10000;
     }
 
-    private int ReceiveFileDetails(IList<Socket> checkReadSocket)
+    private int ReceiveFileDetails()
     {
-      foreach (var socket in checkReadSocket)
+      try
       {
-        if (_fileDetails.ContainsKey(socket) == false)
+        using (MemoryStream memoryStream = new MemoryStream())
         {
-          MemoryStream memoryStream = new MemoryStream();
+          var receivedFileInfo = _udpFileReceiver.Receive(ref _remoteIpEndPoint);
 
-          try
+          if (_fileDetails.ContainsKey(_remoteIpEndPoint) == false)
           {
-            var udpClient = _udpFileReceiver.First(s => s.Client == socket);
-            var receivedFileInfo = udpClient.Receive(ref _remoteIpEndPoint);
-
             XmlSerializer serializer = new XmlSerializer(typeof(FileDetails));
 
             memoryStream.Write(receivedFileInfo, 0, receivedFileInfo.Length);
             memoryStream.Position = 0;
 
             var fileDetails = (FileDetails)serializer.Deserialize(memoryStream);
-            _fileDetails.Add(socket, fileDetails);
+            _fileDetails.Add(_remoteIpEndPoint, fileDetails);
+
+            _memoryMapped.Write(fileDetails, 0);
+            _memoryMapped.Write(_remoteIpEndPoint, _memoryMapped.Size(fileDetails));
 
             Console.WriteLine(fileDetails.FileName);
             Console.WriteLine(fileDetails.FileLength);
           }
-          catch (Exception e)
-          {
-            for (int i = 0; i < _socket.Count; i++)
-            {
-              _socket[i].Close();
-            }
-
-            memoryStream.Dispose();
-            Console.WriteLine(e.Message);
-            return -1;
-          }
-
-          memoryStream.Dispose();
         }
+      }
+      catch (Exception e)
+      {
+        Console.WriteLine(e.Message);
+        return -1;
       }
 
       return 0;
@@ -104,44 +93,31 @@ namespace Laba7_SPOLKS_Server
     {
       var availableToReadSockets = new List<Socket>();
 
-      Semaphore semaphore = new Semaphore(0, 2, "sem");
-
       try
       {
-        for (int i = 0; ;)
+        while (true)
         {
           availableToReadSockets.Clear();
-          //availableToReadSockets.AddRange(_udpFileReceiver.Select(r => r.Client));
-
-          availableToReadSockets.Add(_udpFileReceiver[i].Client);
+          availableToReadSockets.Add(_udpFileReceiver.Client);
 
           Socket.Select(availableToReadSockets, null, null, SelectTimeout);
 
           if (availableToReadSockets.Any())
           {
-            ReceiveFileDetails(availableToReadSockets);
-
-            var processInfo = new ProcessStartInfo
+            if (_fileDetails.Count < _processesPool.MaxClientsAmount)
             {
-              FileName = ServerInstansePath,
-              Arguments = _fileDetails[availableToReadSockets[0]].FileName + " "
-                + _fileDetails[availableToReadSockets[0]].FileLength + " "
-                + (LocalPort + i).ToString() + " "
-                + _remoteIpEndPoint.Address.ToString() + " "
-                + _remoteIpEndPoint.Port.ToString()
-            };
+              ReceiveFileDetails();
 
-            var childProcess = Process.Start(processInfo);
-            _processesList.Add(childProcess);
+              if (_fileDetails.Count > _processesPool.MinClientsAmount)
+              {
+                _processesPool.StartProcess();
+              }
 
-            availableToReadSockets[0].Close();
-
-            i++;
+              _semaphore.Release();
+            }
           }
-
-          if (semaphore.WaitOne(3000))
+          else
           {
-            Console.WriteLine("Exit");
             break;
           }
         }
@@ -156,18 +132,15 @@ namespace Laba7_SPOLKS_Server
         CloseResources();
       }
 
-      semaphore.Close();
-
       return 0;
     }
 
     private void CloseResources()
     {
-      for (int i = 0; i < _socket.Count; i++)
-      {
-        _socket[i].Close();
-        _udpFileReceiver[i].Close();
-      }    
+      _udpFileReceiver.Close();
+      _memoryMapped.Dispose();
+      _semaphore.Close();
+      File.Delete(SharedMemoryFile);
     }
   }
 }

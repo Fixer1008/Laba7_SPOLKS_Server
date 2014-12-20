@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using System.IO;
 using System.Net.Sockets;
 using System.Net;
@@ -15,57 +14,63 @@ namespace Laba7_SPOLKS_Instance
   {
     private const string SyncMessage = "S";
     private const int Size = 8192;
-    private const int PollTimeout = 10000000;
+    private const int PollTimeout = 15000000;  //15 seconds
+    private const int SemaphoreTimeout = 60000;
+    private const string SharedMemoryFile = "SharedMemoryFile";
 
     private int _localPort;
-    private int _remotePort;
-    private long _fileLength;
-    private string _fileName;
     private int _connectionFlag = 0;
 
-    private IPAddress _remoteIPAddress;
     private IPEndPoint _remoteIpEndPoint;
+    private FileDetails _fileDetails;
+
+    private MemoryMappedFile _memoryMapped;
+
+    public ServerInstanse()
+    {
+      _memoryMapped = new MemoryMappedFile(SharedMemoryFile, "lab7");
+    }
 
     public int ReceiveData(string[] arguments)
     {
+      var semaphore = Semaphore.OpenExisting("sem");
+
       if (ParseCommandLineArguments(arguments) == -1)
-	    {
-		    return -1;
-	    }
+      {
+        return -1;
+      }
 
-      UdpFileClient udpFileClient = new UdpFileClient(_localPort);
-      udpFileClient.Client.ReceiveTimeout = udpFileClient.Client.SendTimeout = 10000;
+      if (semaphore.WaitOne(SemaphoreTimeout) == false)
+      {
+        semaphore.Close();
+        _memoryMapped.Dispose();
+        return -1;
+      }
 
-      _remoteIpEndPoint = new IPEndPoint(_remoteIPAddress, _remotePort);
+      this.ReadExtraDataFromMemory();
+      this.ShowExtraData();
 
-      udpFileClient.Connect(_remoteIpEndPoint);
+      UdpFileClient udpFileClient = CreateUdpSocket();
 
       if (udpFileClient.ActiveRemoteHost == false)
       {
         return -1;
       }
 
-      var file = CreateNewFile(udpFileClient);
+      udpFileClient.Send(Encoding.UTF8.GetBytes(SyncMessage), SyncMessage.Length);
 
-      var semaphore = Semaphore.OpenExisting("sem");
+      var file = CreateNewFile();
 
-      for (file.Position = 0; file.Position < _fileLength; )
+      for (file.Position = 0; file.Position < _fileDetails.FileLength; )
       {
         try
         {
           if (udpFileClient.Client.Poll(PollTimeout, SelectMode.SelectRead) == false)
           {
-            Console.WriteLine("Poll");
-            Console.WriteLine(semaphore.Release()); 
             return 0;
-          }
-          else
-          {
-            Console.WriteLine("No poll");
           }
 
           var fileDataArray = udpFileClient.Receive(ref _remoteIpEndPoint);
-
           file.Write(fileDataArray, 0, fileDataArray.Length);
 
           ShowGetBytesCount(file);
@@ -77,7 +82,6 @@ namespace Laba7_SPOLKS_Instance
           if (e.SocketErrorCode == SocketError.TimedOut && _connectionFlag < 3)
           {
             UploadFile(udpFileClient);
-            Console.WriteLine("connectionFlag");
             continue;
           }
           else
@@ -91,34 +95,34 @@ namespace Laba7_SPOLKS_Instance
       return 0;
     }
 
-    private FileStream CreateNewFile(UdpFileClient udpFileClient)
+    private void ReadExtraDataFromMemory()
     {
-      var dotIndex = _fileName.IndexOf('.');
-      var fileName = _fileName.Substring(0, dotIndex) + udpFileClient.Client.LocalEndPoint.GetHashCode() + _fileName.Substring(dotIndex);
+      var memeoryObject = _memoryMapped.Read(0);
+      _fileDetails = memeoryObject as FileDetails;
+
+      memeoryObject = _memoryMapped.Read(_memoryMapped.Size(_fileDetails));
+      _remoteIpEndPoint = memeoryObject as IPEndPoint;
+    }
+
+    private UdpFileClient CreateUdpSocket()
+    {
+      UdpFileClient udpFileClient = new UdpFileClient(_localPort);
+      udpFileClient.Client.ReceiveTimeout = udpFileClient.Client.SendTimeout = 10000;
+      udpFileClient.Connect(_remoteIpEndPoint);
+      return udpFileClient;
+    }
+
+    private FileStream CreateNewFile()
+    {
+      var dotIndex = _fileDetails.FileName.IndexOf('.');
+      var fileName = _fileDetails.FileName.Substring(0, dotIndex) + _remoteIpEndPoint.GetHashCode() + _fileDetails.FileName.Substring(dotIndex);
       var file = new FileStream(fileName, FileMode.Create, FileAccess.Write);
       return file;
     }
 
     private int ParseCommandLineArguments(string[] arguments)
     {
-      _fileName = arguments[0];
-
-      if (long.TryParse(arguments[1], out _fileLength) == false)
-      {
-        return -1;
-      }
-
-      if (int.TryParse(arguments[2], out _localPort) == false)
-	    {
-		    return -1;
-	    }
-
-      if (IPAddress.TryParse(arguments[3], out _remoteIPAddress) == false)
-      {
-        return -1;
-      }
-
-      if (int.TryParse(arguments[4], out _remotePort) == false)
+      if (int.TryParse(arguments[0], out _localPort) == false)
       {
         return -1;
       }
@@ -146,6 +150,21 @@ namespace Laba7_SPOLKS_Instance
       client.Close();
     }
 
+    /// <summary>
+    /// For debugging
+    /// </summary>
+    private void ShowExtraData()
+    {
+      Console.WriteLine(_fileDetails.FileName);
+      Console.WriteLine(_fileDetails.FileLength);
+      Console.WriteLine(_remoteIpEndPoint.Address);
+      Console.WriteLine(_remoteIpEndPoint.Port);
+    }
+
+    /// <summary>
+    /// For debugging
+    /// </summary>
+    /// <param name="file"></param>
     private void ShowGetBytesCount(FileStream file)
     {
       Console.Clear();

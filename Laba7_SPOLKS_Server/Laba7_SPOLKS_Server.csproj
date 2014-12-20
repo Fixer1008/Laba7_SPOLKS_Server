@@ -21,7 +21,7 @@
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -44,9 +44,12 @@
   <ItemGroup>
     <Compile Include="FileDetails.cs" />
     <Compile Include="FileReceiver.cs" />
+    <Compile Include="ProcessesPool.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="MemoryMappedFile.cs" />
     <Compile Include="UdpFileClient.cs" />
+    <Compile Include="Win32API.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
